@@ -42,8 +42,10 @@ df = pd.read_csv(fn)
 ecg_clean = df['P02S ECG']
 ecg_idx = [i for i in range(len(ecg_clean))]
 ecg_filtered = bandpass(ecg_clean, lf, hf, 250, 2, False)
-ecg_filtered = scale(ecg_filtered, axis=0, with_mean=True,
-                     with_std=True, copy=True)
+ecg_filtered = np.interp(
+    ecg_filtered, (ecg_filtered.min(), ecg_filtered.max()), (-1, +1))
+# ecg_filtered = scale(ecg_filtered, axis=0, with_mean=True,
+#                      with_std=True, copy=True)
 
 min_g = min(ecg_filtered)
 max_g = max(ecg_filtered)
