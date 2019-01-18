@@ -1,0 +1,10 @@
+attrs:
+    # Figure:
+        # background_fill_color: "#DDDDDD"
+        # outline_line_color: white
+        # toolbar_location: above
+        # height: 300
+        # width: 1280
+    Grid:
+        grid_line_dash: [6, 4]
+        grid_line_color: white

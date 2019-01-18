@@ -1,0 +1,19 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Unit Marker for ECG signal {{ framework }}</title>
+</head>
+
+<body>
+  <div>
+    Unit Marker for ECG signal
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+      <input type="file" name="file" />
+      <input type="submit" value="upload" />
+    </form>
+  </div>
+  {{ script|safe }}
+</body>
+</html>
