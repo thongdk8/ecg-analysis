@@ -24,11 +24,25 @@ from bokeh.io import reset_output
 import os
 from flask import flash, request, redirect, url_for
 from werkzeug.utils import secure_filename
-UPLOAD_FOLDER = './uploaded_data'
+import datetime
+import json
+
+THIS_FILE_PATH = os.path.dirname(os.path.realpath(__file__))
+
+UPLOAD_FOLDER = os.path.join(THIS_FILE_PATH, 'uploaded_data')
+MARKED_FOLDER = os.path.join(THIS_FILE_PATH, 'processed_data')
+if not os.path.isdir(UPLOAD_FOLDER):
+    os.mkdir(UPLOAD_FOLDER)
+if not os.path.isdir(MARKED_FOLDER):
+    os.mkdir(MARKED_FOLDER)
+    os.mkdir(os.path.join(MARKED_FOLDER, 'Poor'))
+    os.mkdir(os.path.join(MARKED_FOLDER, 'Boderline'))
+    os.mkdir(os.path.join(MARKED_FOLDER, 'Good'))
 ALLOWED_EXTENSIONS = set(['csv'])
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MARKED_FOLDER'] = MARKED_FOLDER
 app.config['CUR_FILE'] = 'P2sRawdata135.csv'
 
 def allowed_file(filename):
@@ -36,7 +50,7 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-fn = '/home/thongpb/works/ECG_project/P2S_121218/P2sRawdatatyu.csv'
+fn = os.path.join(UPLOAD_FOLDER, 'P2sRawdata135.csv')
 lf, hf = 0.25, 40
 df = pd.read_csv(fn)
 ecg_clean = df['P02S ECG']
@@ -51,6 +65,7 @@ min_g = min(ecg_filtered)
 max_g = max(ecg_filtered)
 
 crr_idx = 0
+
 
 def modify_doc(doc):
     reset_output(state=None)
@@ -74,9 +89,10 @@ def modify_doc(doc):
 
     div = Div(text="Quality")
     radio_group = RadioGroup(
-        labels=["Good", "Neutral", "Poor"], active=0)
+        labels=["Good", "Boderline", "Poor"], active=2)
     button_nxt_unit = Button(label="Next Unit", button_type="success")
-
+    skip_unit = RadioGroup(
+        labels=["Save This Unit", "Skip This Unit"], active=0)
 
     marker_line_st = ColumnDataSource(data=dict(x=[0, 0], y=[min_g, max_g]))
     marker_line_en = ColumnDataSource(data=dict(x=[0, 0], y=[min_g, max_g]))
@@ -91,38 +107,64 @@ def modify_doc(doc):
     sx.line('x', 'y', source=marker_line_en,
             legend="current unit ", line_color="blue", line_width=1)
     sx1 = figure(width=800, height=300, title="ecg_filtered "+str(lf) +
-                "-"+str(hf)+"Hz", x_axis_label='time', y_axis_label='acc')
+                 "-"+str(hf)+"Hz", x_axis_label='time', y_axis_label='acc')
     sx1.line('x', 'y', source=s2, legend="ecg_filtered unit "+str(lf) +
-            "-"+str(hf)+"Hz", line_color="red", line_width=1)
+             "-"+str(hf)+"Hz", line_color="red", line_width=1)
 
     peaks, _ = find_peaks(ecg_filtered, distance=150)
 
     crr_idx = 0
+    marked_file = open(os.path.join(
+        app.config['MARKED_FOLDER'], app.config['CUR_FILE'][:-4] + '_' + 
+        str(datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")) + '.txt'), 'w')
+    marked_file.write(app.config['CUR_FILE'] + '\n')
+    marked_file.write('P02S ECG' + '\n')
+    marked_file.write(str(len(peaks) - 1) + '\n')
+    res_df = {}
+    
     def my_nxt_unit_handler():
         global crr_idx, ecg_filtered
 
-        st = int(max(0, peaks[crr_idx] -
-                     (peaks[crr_idx + 1] - peaks[crr_idx]) / 2))
-        en = int(
-            min(peaks[crr_idx] + (peaks[crr_idx + 1] - peaks[crr_idx]) / 2, ecg_idx[-1]))
-        unit_idx = ecg_idx[st:en]
-        unit_data = ecg_filtered[st:en]
-        print("\nentering set unit data", "crr len(x)", len(
-            s2.data['x']), "crr len(y)", len(s2.data['y']))
-        s2.data['x'] = unit_idx
-        print("have set x", "crr len(x)", len(
-            s2.data['x']), "crr len(y)", len(s2.data['y']))
-        s2.data['y'] = unit_data
-        print("have set y", "crr len(x)", len(
-            s2.data['x']), "crr len(y)", len(s2.data['y']))
+        if (crr_idx < len(peaks) - 1):
 
-        marker_line_st.data['x'] = [st, st]
-        marker_line_en.data['x'] = [en, en]
+            #save unit data
+            if(skip_unit.active == 0 and crr_idx > 0):
+                out_fn = os.path.join(
+                    app.config['MARKED_FOLDER'], radio_group.labels[radio_group.active],
+                    app.config['CUR_FILE'][:-4]+'_P2SECG_'+str(crr_idx)+'.json')
+                print(out_fn)
+                with open(out_fn, "w") as write_file:
+                    json.dump(res_df, write_file)
 
-        print("crr marked quality: ",
-              radio_group.labels[radio_group.active], '\n')
+            st = int(max(0, peaks[crr_idx] -
+                         (peaks[crr_idx + 1] - peaks[crr_idx]) / 2))
+            en = int(
+                min(peaks[crr_idx] + (peaks[crr_idx + 1] - peaks[crr_idx]) / 2, ecg_idx[-1]))
+            unit_idx = ecg_idx[st:en]
+            unit_data = ecg_filtered[st:en]
+            s2.data['x'] = unit_idx
+            s2.data['y'] = unit_data
 
-        crr_idx += 1
+            marker_line_st.data['x'] = [st, st]
+            marker_line_en.data['x'] = [en, en]
+
+            print("crr marked quality: ", radio_group.labels[radio_group.active])
+
+            marked_file.write(str(st) + '\t' + str(en) + '\t' + str(en - st) + '\t' +
+                              str(radio_group.labels[radio_group.active]) + '\n')
+            
+            
+            res_df['file_name'] = app.config['CUR_FILE']
+            res_df['unit_number'] = crr_idx
+            res_df['size'] = en - st +1
+            res_df['data'] = list(unit_data)
+            res_df['signal_name'] = 'P02S ECG'
+            res_df['quality'] = radio_group.labels[radio_group.active]
+
+            crr_idx += 1
+
+        if crr_idx == len(peaks)-1:
+            marked_file.close()
 
     button_nxt_unit.on_click(my_nxt_unit_handler)
     graphs = column(
@@ -130,9 +172,9 @@ def modify_doc(doc):
 
     doc.add_root(widgetbox(file_name_div))
     doc.add_root(graphs)
-    doc.add_root(row(widgetbox(radio_group), widgetbox(button_nxt_unit)))
-    doc.theme = Theme(filename="theme.yaml")
-
+    doc.add_root(row(widgetbox(radio_group), widgetbox(
+        button_nxt_unit), widgetbox(skip_unit)))
+    doc.theme = Theme(filename=os.path.join(THIS_FILE_PATH, "theme.yaml"))
 
 
 @app.route('/', methods=['GET'])
@@ -172,7 +214,8 @@ def upload_file():
             #                         filename=filename))
     return redirect('/')
 
+
 if __name__ == '__main__':
-    # print('Opening single process Flask app with embedded Bokeh application on http://localhost:8000/')
-    # print()
-    app.run()
+    print('Opening single process Flask app with embedded Bokeh application on http://localhost:8000/')
+    print()
+    app.run(port=8000)
